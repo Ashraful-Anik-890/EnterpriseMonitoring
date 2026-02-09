@@ -125,7 +125,8 @@ class ScreenMonitor:
                         'active_app': active_app
                     }
                     
-                    self.ipc_client.send(data)
+                    msg_type = data.pop('type') 
+                    self.ipc_client.send_message(msg_type, data)
                     logger.info("Screen Monitor initialized")
                     
                     # Wait for next capture
@@ -257,9 +258,10 @@ class ClipboardMonitor:
                         'source_app': source_app
                     }
                     
-                    self.ipc_client.send(data)
+                    msg_type = data.pop('type') 
+                    self.ipc_client.send_message(msg_type, data)
                     logger.debug(f"Clipboard event logged: {len(content)} chars from {source_app}")
-                
+         
                 # Reset error counter on success
                 consecutive_errors = 0
                 
@@ -365,7 +367,8 @@ class AppUsageMonitor:
                                 'duration_seconds': round(duration, 2)
                             }
                             
-                            self.ipc_client.send(data)
+                            msg_type = data.pop('type') 
+                            self.ipc_client.send_message(msg_type, data)
                             logger.debug(f"App usage logged: {self.current_app} - {duration:.1f}s")
                     
                     # Start new session
