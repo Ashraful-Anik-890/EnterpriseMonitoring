@@ -1,0 +1,24 @@
+# Enterprise Monitoring Agent - Minimal Dependencies
+# Python 3.9+ required
+
+# Screen Capture (Cross-platform, fast)
+mss
+
+# Clipboard Monitoring (No Win32 dependency)
+pyperclip
+
+# System Tray Icon
+pystray
+Pillow
+
+# Encryption
+cryptography
+
+# Process Management
+psutil
+
+# Logging
+# (built-in: logging, socket, sqlite3, threading, queue)
+
+# Build Tools (Development only)
+pyinstaller
