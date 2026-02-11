@@ -1,6 +1,10 @@
 """
-Database Manager for Enterprise Monitoring Agent
+Database Manager for Enterprise Monitoring Agent - ENHANCED
 Handles all SQLite database operations with encryption support
+
+ENHANCEMENTS:
+- Added 'synced' and 'synced_at' columns to track server sync status
+- Added migration logic to add columns to existing databases
 """
 
 import sqlite3
@@ -28,6 +32,9 @@ class DatabaseManager:
         # Initialize database schema
         self._init_database()
         
+        # Run migrations
+        self._run_migrations()
+        
         logger.info(f"Database initialized at {self.db_path}")
     
     def _init_database(self):
@@ -46,7 +53,7 @@ class DatabaseManager:
                 # Create tables
                 self._create_tables(cursor)
                 
-                # Create indexes (FIXED SYNTAX)
+                # Create indexes
                 self._create_indexes(cursor)
                 
                 conn.commit()
@@ -71,6 +78,8 @@ class DatabaseManager:
                 resolution TEXT,
                 active_window TEXT,
                 active_app TEXT,
+                synced INTEGER DEFAULT 0,
+                synced_at TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -85,6 +94,8 @@ class DatabaseManager:
                 encrypted_content BLOB,
                 content_hash TEXT,
                 source_app TEXT,
+                synced INTEGER DEFAULT 0,
+                synced_at TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -97,6 +108,8 @@ class DatabaseManager:
                 app_name TEXT NOT NULL,
                 window_title TEXT,
                 duration_seconds REAL,
+                synced INTEGER DEFAULT 0,
+                synced_at TEXT,
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -128,6 +141,11 @@ class DatabaseManager:
             ON screenshots(active_app)
         """)
         
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_screenshots_synced 
+            ON screenshots(synced)
+        """)
+        
         # Clipboard events indexes
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_clipboard_timestamp 
@@ -137,6 +155,11 @@ class DatabaseManager:
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_clipboard_type 
             ON clipboard_events(content_type)
+        """)
+        
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_clipboard_synced 
+            ON clipboard_events(synced)
         """)
         
         # App usage indexes
@@ -150,6 +173,11 @@ class DatabaseManager:
             ON app_usage(app_name)
         """)
         
+        cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_app_usage_synced 
+            ON app_usage(synced)
+        """)
+        
         # System events indexes
         cursor.execute("""
             CREATE INDEX IF NOT EXISTS idx_system_events_timestamp 
@@ -160,6 +188,49 @@ class DatabaseManager:
             CREATE INDEX IF NOT EXISTS idx_system_events_type 
             ON system_events(event_type)
         """)
+    
+    def _run_migrations(self):
+        """
+        NEW: Run database migrations
+        
+        This adds the 'synced' and 'synced_at' columns to existing databases
+        that were created with the old schema
+        """
+        with self.lock:
+            try:
+                conn = sqlite3.connect(str(self.db_path), timeout=10.0)
+                cursor = conn.cursor()
+                
+                # Check if migrations are needed
+                tables_to_migrate = ['screenshots', 'clipboard_events', 'app_usage']
+                
+                for table in tables_to_migrate:
+                    # Check if synced column exists
+                    cursor.execute(f"PRAGMA table_info({table})")
+                    columns = [col[1] for col in cursor.fetchall()]
+                    
+                    if 'synced' not in columns:
+                        logger.info(f"Adding synced columns to {table}")
+                        cursor.execute(f"""
+                            ALTER TABLE {table} 
+                            ADD COLUMN synced INTEGER DEFAULT 0
+                        """)
+                        cursor.execute(f"""
+                            ALTER TABLE {table} 
+                            ADD COLUMN synced_at TEXT
+                        """)
+                        
+                        # Create index
+                        cursor.execute(f"""
+                            CREATE INDEX IF NOT EXISTS idx_{table}_synced 
+                            ON {table}(synced)
+                        """)
+                
+                conn.commit()
+                conn.close()
+                
+            except sqlite3.Error as e:
+                logger.error(f"Migration error: {e}", exc_info=True)
     
     def log_screenshot(self, data: Dict[str, Any]):
         """Log screenshot metadata"""
@@ -283,21 +354,24 @@ class DatabaseManager:
                 cutoff_date = (datetime.now() - timedelta(days=retention_days)).isoformat()
                 screenshot_cutoff = (datetime.now() - timedelta(days=screenshot_days)).isoformat()
                 
-                # Delete old screenshots metadata
+                # Delete old screenshots metadata (only if synced or older than threshold)
                 cursor.execute("""
-                    DELETE FROM screenshots WHERE timestamp < ?
-                """, (screenshot_cutoff,))
+                    DELETE FROM screenshots 
+                    WHERE timestamp < ? AND (synced = 1 OR timestamp < ?)
+                """, (screenshot_cutoff, screenshot_cutoff))
                 screenshots_deleted = cursor.rowcount
                 
-                # Delete old clipboard events
+                # Delete old clipboard events (only if synced)
                 cursor.execute("""
-                    DELETE FROM clipboard_events WHERE timestamp < ?
+                    DELETE FROM clipboard_events 
+                    WHERE timestamp < ? AND synced = 1
                 """, (cutoff_date,))
                 clipboard_deleted = cursor.rowcount
                 
-                # Delete old app usage
+                # Delete old app usage (only if synced)
                 cursor.execute("""
-                    DELETE FROM app_usage WHERE timestamp < ?
+                    DELETE FROM app_usage 
+                    WHERE timestamp < ? AND synced = 1
                 """, (cutoff_date,))
                 app_usage_deleted = cursor.rowcount
                 
@@ -336,6 +410,11 @@ class DatabaseManager:
                 for table in ['screenshots', 'clipboard_events', 'app_usage', 'system_events']:
                     cursor.execute(f"SELECT COUNT(*) FROM {table}")
                     stats[f'{table}_count'] = cursor.fetchone()[0]
+                    
+                    # Count unsynced records
+                    if table != 'system_events':
+                        cursor.execute(f"SELECT COUNT(*) FROM {table} WHERE synced = 0")
+                        stats[f'{table}_unsynced'] = cursor.fetchone()[0]
                 
                 # Get database size
                 cursor.execute("SELECT page_count * page_size as size FROM pragma_page_count(), pragma_page_size()")

@@ -701,6 +701,7 @@
   ('urllib.parse', 'C:\\Python314\\Lib\\urllib\\parse.py', 'PYMODULE'),
   ('urllib.request', 'C:\\Python314\\Lib\\urllib\\request.py', 'PYMODULE'),
   ('urllib.response', 'C:\\Python314\\Lib\\urllib\\response.py', 'PYMODULE'),
+  ('uuid', 'C:\\Python314\\Lib\\uuid.py', 'PYMODULE'),
   ('xml', 'C:\\Python314\\Lib\\xml\\__init__.py', 'PYMODULE'),
   ('xml.etree', 'C:\\Python314\\Lib\\xml\\etree\\__init__.py', 'PYMODULE'),
   ('xml.etree.ElementInclude',

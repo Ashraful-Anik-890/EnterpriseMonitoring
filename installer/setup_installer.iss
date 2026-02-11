@@ -1,244 +1,152 @@
-; Inno Setup Script for Enterprise Monitoring Agent
-; Split-Brain Architecture: Service Watchdog (SYSTEM) + User Agent (User)
+; Inno Setup Script for Enterprise Monitoring Agent v2.0.0
+; FIXED: Added top-level Start Menu shortcut for Windows Search visibility
 
 #define MyAppName "Enterprise Monitoring Agent"
 #define MyAppVersion "2.0.0"
 #define MyAppPublisher "Skillers Zone LTD"
 #define MyAppURL "https://www.skillerszone.com"
-#define MyWatchdogServiceName "EnterpriseWatchdog"
+#define MyAppExeName "Agent.exe"
 
 [Setup]
-AppId={{F1B2C3D4-E5F6-7G8H-9I0J-K1L2M3N4O5P6}
+AppId={{8F2A3B4C-5D6E-7F8G-9H0I-1J2K3L4M5N6O}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={commonpf}\{#MyAppName}
+DefaultDirName={autopf}\Enterprise Monitoring Agent
 DefaultGroupName={#MyAppName}
-DisableProgramGroupPage=yes
+AllowNoIcons=yes
 OutputDir=installer_output
 OutputBaseFilename=EnterpriseMonitoring_v{#MyAppVersion}_Setup
 Compression=lzma
 SolidCompression=yes
+WizardStyle=modern
 PrivilegesRequired=admin
+ArchitecturesAllowed=x64
 ArchitecturesInstallIn64BitMode=x64
 UninstallDisplayIcon={app}\Agent.exe
-WizardStyle=modern
+
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
-[Files]
-; Service Watchdog (SYSTEM process)
-Source: "..\dist\Watchdog.exe"; DestDir: "{app}"; Flags: ignoreversion
+[Tasks]
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
-; User Agent (User process)
+[Files]
+; Executables
+Source: "..\dist\Watchdog.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\dist\Agent.exe"; DestDir: "{app}"; Flags: ignoreversion
 
-; NSSM for service management
-Source: "..\tools\nssm.exe"; DestDir: "{app}"; Flags: ignoreversion
+; NSSM Service Manager
+Source: "..\tools\nssm.exe"; DestDir: "{app}\tools"; Flags: ignoreversion
 
-; Optional: Documentation
-; Source: "README.md"; DestDir: "{app}"; Flags: ignoreversion
-; Source: "LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+; Documentation
+Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion isreadme
+Source: "..\BUILD_GUIDE.md"; DestDir: "{app}"; Flags: ignoreversion
+
+; Icon file
+Source: "..\resources\icon.ico"; DestDir: "{app}"; Flags: ignoreversion
+
+[Icons]
+; FIXED: Top-level Start Menu shortcut for Windows Search visibility
+; This puts "Enterprise Monitoring Agent" at the root of Start Menu
+; Windows Indexing picks this up immediately, making it searchable
+Name: "{commonprograms}\Enterprise Monitoring Agent"; Filename: "{app}\Agent.exe"; Comment: "Enterprise Monitoring User Agent"; IconFilename: "{app}\icon.ico"
+
+; Desktop icon (optional)
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\icon.ico"
+
+; Additional shortcuts in program group folder (for traditional Start Menu navigation)
+Name: "{group}\Enterprise Monitoring Agent"; Filename: "{app}\Agent.exe"; Comment: "User Monitoring Agent"; IconFilename: "{app}\icon.ico"
+Name: "{group}\Service Manager"; Filename: "{sys}\sc.exe"; Parameters: "query EnterpriseWatchdog"; Comment: "Check Service Status"
+Name: "{group}\View Logs"; Filename: "explorer.exe"; Parameters: "C:\ProgramData\EnterpriseMonitoring\logs"
+Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 
 [Dirs]
-; Create ProgramData directories
+; Create data directories
 Name: "C:\ProgramData\EnterpriseMonitoring"; Permissions: users-modify
 Name: "C:\ProgramData\EnterpriseMonitoring\data"; Permissions: users-modify
 Name: "C:\ProgramData\EnterpriseMonitoring\data\screenshots"; Permissions: users-modify
 Name: "C:\ProgramData\EnterpriseMonitoring\logs"; Permissions: users-modify
 Name: "C:\ProgramData\EnterpriseMonitoring\config"; Permissions: users-modify
-
-[Registry]
-; Register User Agent to start on login
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
-    ValueType: string; ValueName: "EnterpriseAgent"; \
-    ValueData: """{app}\Agent.exe"""; \
-    Flags: uninsdeletevalue
+Name: "C:\ProgramData\EnterpriseMonitoring\exports"; Permissions: users-modify
 
 [Run]
-; === INSTALL SERVICE WATCHDOG ===
+; Install Service using NSSM
+Filename: "{app}\tools\nssm.exe"; Parameters: "install EnterpriseWatchdog ""{app}\Watchdog.exe"""; StatusMsg: "Installing Watchdog Service..."; Flags: runhidden
 
-; Stop service if already exists (will fail silently if doesn't exist)
-Filename: "{app}\nssm.exe"; \
-    Parameters: "stop ""{#MyWatchdogServiceName}"""; \
-    Flags: runhidden; StatusMsg: "Stopping existing service..."
+; Configure Service
+Filename: "{app}\tools\nssm.exe"; Parameters: "set EnterpriseWatchdog AppDirectory ""{app}"""; Flags: runhidden
+Filename: "{app}\tools\nssm.exe"; Parameters: "set EnterpriseWatchdog DisplayName ""Enterprise Monitoring Watchdog"""; Flags: runhidden
+Filename: "{app}\tools\nssm.exe"; Parameters: "set EnterpriseWatchdog Description ""Central monitoring service for Enterprise Monitoring Agent"""; Flags: runhidden
+Filename: "{app}\tools\nssm.exe"; Parameters: "set EnterpriseWatchdog Start SERVICE_AUTO_START"; Flags: runhidden
+Filename: "{app}\tools\nssm.exe"; Parameters: "set EnterpriseWatchdog ObjectName LocalSystem"; Flags: runhidden
 
-; Wait a moment for service to stop
-Filename: "{cmd}"; Parameters: "/C timeout /T 2 /NOBREAK"; \
-    Flags: runhidden
+; Configure Service logging
+Filename: "{app}\tools\nssm.exe"; Parameters: "set EnterpriseWatchdog AppStdout ""C:\ProgramData\EnterpriseMonitoring\logs\watchdog_stdout.log"""; Flags: runhidden
+Filename: "{app}\tools\nssm.exe"; Parameters: "set EnterpriseWatchdog AppStderr ""C:\ProgramData\EnterpriseMonitoring\logs\watchdog_stderr.log"""; Flags: runhidden
 
-; Remove old service if exists (will fail silently if doesn't exist)
-Filename: "{app}\nssm.exe"; \
-    Parameters: "remove ""{#MyWatchdogServiceName}"" confirm"; \
-    Flags: runhidden
+; Start Service
+Filename: "{app}\tools\nssm.exe"; Parameters: "start EnterpriseWatchdog"; StatusMsg: "Starting Watchdog Service..."; Flags: runhidden
 
-; Install new service
-Filename: "{app}\nssm.exe"; \
-    Parameters: "install ""{#MyWatchdogServiceName}"" ""{app}\Watchdog.exe"""; \
-    Flags: runhidden; StatusMsg: "Installing Watchdog Service..."
-
-; Configure service display name
-Filename: "{app}\nssm.exe"; \
-    Parameters: "set ""{#MyWatchdogServiceName}"" DisplayName ""Enterprise Monitoring Watchdog"""; \
-    Flags: runhidden
-
-; Configure service description
-Filename: "{app}\nssm.exe"; \
-    Parameters: "set ""{#MyWatchdogServiceName}"" Description ""Central database manager and IPC server for Enterprise Monitoring"""; \
-    Flags: runhidden
-
-; Set service to start automatically
-Filename: "{app}\nssm.exe"; \
-    Parameters: "set ""{#MyWatchdogServiceName}"" Start SERVICE_AUTO_START"; \
-    Flags: runhidden
-
-; Configure stdout logging
-Filename: "{app}\nssm.exe"; \
-    Parameters: "set ""{#MyWatchdogServiceName}"" AppStdout ""C:\ProgramData\EnterpriseMonitoring\logs\watchdog_stdout.log"""; \
-    Flags: runhidden
-
-; Configure stderr logging
-Filename: "{app}\nssm.exe"; \
-    Parameters: "set ""{#MyWatchdogServiceName}"" AppStderr ""C:\ProgramData\EnterpriseMonitoring\logs\watchdog_stderr.log"""; \
-    Flags: runhidden
-
-; Configure restart on failure
-Filename: "{app}\nssm.exe"; \
-    Parameters: "set ""{#MyWatchdogServiceName}"" AppExit Default Restart"; \
-    Flags: runhidden
-
-; Set restart delay (10 seconds)
-Filename: "{app}\nssm.exe"; \
-    Parameters: "set ""{#MyWatchdogServiceName}"" AppRestartDelay 10000"; \
-    Flags: runhidden
-
-; Start service
-Filename: "{app}\nssm.exe"; \
-    Parameters: "start ""{#MyWatchdogServiceName}"""; \
-    Flags: runhidden; StatusMsg: "Starting Watchdog Service..."
-
-; === LAUNCH USER AGENT ===
-
-; Start User Agent immediately (will also start on login via Registry)
-Filename: "{app}\Agent.exe"; \
-    Description: "Launch Enterprise Monitoring Agent"; \
-    Flags: nowait postinstall skipifsilent
+; Add User Agent to startup (runs on user login)
+Filename: "reg"; Parameters: "add HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v EnterpriseMonitoringAgent /t REG_SZ /d ""{app}\Agent.exe"" /f"; StatusMsg: "Adding User Agent to startup..."; Flags: runhidden
 
 [UninstallRun]
-; Stop User Agent (best effort - may not be running)
-Filename: "taskkill"; Parameters: "/F /IM Agent.exe"; \
-    Flags: runhidden; RunOnceId: "StopAgent"
+; Stop and remove service
+Filename: "{app}\tools\nssm.exe"; Parameters: "stop EnterpriseWatchdog"; Flags: runhidden
+Filename: "{app}\tools\nssm.exe"; Parameters: "remove EnterpriseWatchdog confirm"; Flags: runhidden
 
-; Stop Watchdog Service
-Filename: "{app}\nssm.exe"; \
-    Parameters: "stop ""{#MyWatchdogServiceName}"""; \
-    Flags: runhidden; RunOnceId: "StopService"
+; Remove from startup
+Filename: "reg"; Parameters: "delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v EnterpriseMonitoringAgent /f"; Flags: runhidden
 
-; Remove Watchdog Service
-Filename: "{app}\nssm.exe"; \
-    Parameters: "remove ""{#MyWatchdogServiceName}"" confirm"; \
-    Flags: runhidden; RunOnceId: "RemoveService"
+; Stop running Agent
+Filename: "taskkill"; Parameters: "/F /IM Agent.exe"; Flags: runhidden
+
+[UninstallDelete]
+; Optional: Delete data files (ask user)
+Type: filesandordirs; Name: "C:\ProgramData\EnterpriseMonitoring\data"
+Type: filesandordirs; Name: "C:\ProgramData\EnterpriseMonitoring\logs"
 
 [Code]
-// ===== ADMIN PRIVILEGE CHECK =====
 function InitializeSetup(): Boolean;
+var
+  ResultCode: Integer;
 begin
   Result := True;
   
-  if not IsAdminLoggedOn() then
-  begin
-    MsgBox('This installer requires administrator privileges to install a Windows service.' + #13#10 + 
-           'Please run the installer as administrator.', mbError, MB_OK);
-    Result := False;
-    Exit;
-  end;
-  
-  if not IsAdminInstallMode() then
-  begin
-    MsgBox('This installer must be run with elevated privileges.' + #13#10 +
-           'Please right-click the installer and select "Run as administrator".', mbError, MB_OK);
-    Result := False;
-    Exit;
-  end;
-end;
-
-// ===== STOP EXISTING PROCESSES BEFORE INSTALL =====
-function PrepareToInstall(var NeedsRestart: Boolean): String;
-var
-  ResultCode: Integer;
-begin
-  Result := '';
-  
-  // Try to stop User Agent if running
-  Exec('taskkill', '/F /IM Agent.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Sleep(1000);
-  
-  // Check if Watchdog service exists and try to stop it
-  if Exec('sc', 'query "{#MyWatchdogServiceName}"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
+  // Check if service already exists
+  if Exec('sc', 'query EnterpriseWatchdog', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
   begin
     if ResultCode = 0 then
     begin
-      Log('Watchdog service exists, attempting to stop...');
-      Exec('sc', 'stop "{#MyWatchdogServiceName}"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-      Sleep(3000); // Wait for service to stop
-    end;
-  end;
-end;
-
-// ===== POST-INSTALL VERIFICATION =====
-procedure CurStepChanged(CurStep: TSetupStep);
-var
-  ResultCode: Integer;
-begin
-  if CurStep = ssPostInstall then
-  begin
-    // Verify Watchdog service installation
-    if Exec(ExpandConstant('{app}\nssm.exe'), 'status "{#MyWatchdogServiceName}"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode) then
-    begin
-      if ResultCode = 0 then
+      // Service exists, ask to uninstall first
+      if MsgBox('Enterprise Monitoring Agent is already installed. Do you want to uninstall the existing version first?', 
+                mbConfirmation, MB_YESNO) = IDYES then
       begin
-        Log('Watchdog service installed and started successfully');
+        // Stop service
+        Exec('nssm', 'stop EnterpriseWatchdog', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        Sleep(2000);
+        // Remove service
+        Exec('nssm', 'remove EnterpriseWatchdog confirm', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        Sleep(1000);
       end
       else
       begin
-        MsgBox('Warning: Watchdog service installation may have encountered issues. ' +
-               'Please check the logs at C:\ProgramData\EnterpriseMonitoring\logs\', 
-               mbInformation, MB_OK);
+        Result := False;
       end;
     end;
   end;
 end;
 
-// ===== UNINSTALL CLEANUP =====
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
-var
-  ResultCode: Integer;
+procedure CurStepChanged(CurStep: TSetupStep);
 begin
-  if CurUninstallStep = usUninstall then
+  if CurStep = ssPostInstall then
   begin
-    // Stop User Agent
-    Exec('taskkill', '/F /IM Agent.exe', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(1000);
-    
-    // Stop and remove Watchdog service
-    Exec(ExpandConstant('{app}\nssm.exe'), 'stop "{#MyWatchdogServiceName}"', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(2000);
-    Exec(ExpandConstant('{app}\nssm.exe'), 'remove "{#MyWatchdogServiceName}" confirm', '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
-    Sleep(1000);
-  end;
-  
-  if CurUninstallStep = usPostUninstall then
-  begin
-    // Ask if user wants to keep monitoring data
-    if MsgBox('Do you want to remove all monitoring data and logs from C:\ProgramData\EnterpriseMonitoring?' + #13#10 + #13#10 +
-              'This includes screenshots, clipboard history, and database files.', 
-              mbConfirmation, MB_YESNO) = IDYES then
-    begin
-      DelTree('C:\ProgramData\EnterpriseMonitoring', True, True, True);
-    end;
+    // Give service time to start
+    Sleep(3000);
   end;
 end;

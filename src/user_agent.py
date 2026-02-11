@@ -1,7 +1,7 @@
 """
-User Agent - ENHANCED VERSION
+User Agent - FIXED VERSION
 Runs in user session to capture screen, clipboard, and app usage
-Fixed with robust error handling and IPC reconnection
+FIXED: Using send_message(msg_type, data) instead of send()
 """
 
 import sys
@@ -84,7 +84,7 @@ class ScreenMonitor:
         logger.info("Screen Monitor stopped")
     
     def _capture_loop(self):
-        """Main capture loop"""
+        """Main capture loop - FIXED IPC CALL"""
         logger.info("Screenshot capture loop started")
         
         with mss.mss() as sct:
@@ -114,9 +114,8 @@ class ScreenMonitor:
                     # Get file size
                     file_size = filepath.stat().st_size
                     
-                    # Send to Watchdog via IPC
+                    # FIXED: Extract type and use send_message()
                     data = {
-                        'type': 'screenshot',
                         'timestamp': timestamp.isoformat(),
                         'filepath': str(filepath),
                         'file_size_bytes': file_size,
@@ -125,9 +124,9 @@ class ScreenMonitor:
                         'active_app': active_app
                     }
                     
-                    msg_type = data.pop('type') 
-                    self.ipc_client.send_message(msg_type, data)
-                    logger.info("Screen Monitor initialized")
+                    # Send to Watchdog via IPC with correct method
+                    self.ipc_client.send_message('screenshot', data)
+                    logger.debug(f"Screenshot sent: {filename}")
                     
                     # Wait for next capture
                     time.sleep(self.interval)
@@ -198,7 +197,7 @@ class ClipboardMonitor:
         logger.info("Clipboard Monitor stopped")
     
     def _monitor_loop(self):
-        """Main monitoring loop with BULLETPROOF error handling"""
+        """Main monitoring loop - FIXED IPC CALL"""
         logger.info("Clipboard monitor loop started")
         
         consecutive_errors = 0
@@ -211,12 +210,10 @@ class ClipboardMonitor:
                 content_type = None
                 
                 # CRITICAL: Wrap clipboard access in try-except
-                # pyperclip can raise exceptions if clipboard is locked
                 try:
                     content = pyperclip.paste()
                     content_type = 'text'
                 except Exception as clipboard_error:
-                    # Common when clipboard is locked by another app
                     logger.debug(f"Clipboard locked or unavailable: {clipboard_error}")
                     time.sleep(self.interval)
                     continue
@@ -247,9 +244,8 @@ class ClipboardMonitor:
                         except Exception as e:
                             logger.error(f"Encryption failed: {e}")
                     
-                    # Send to Watchdog
+                    # FIXED: Create data without 'type' key, send with correct method
                     data = {
-                        'type': 'clipboard_event',
                         'timestamp': datetime.now().isoformat(),
                         'content_type': content_type,
                         'content_preview': preview,
@@ -258,8 +254,8 @@ class ClipboardMonitor:
                         'source_app': source_app
                     }
                     
-                    msg_type = data.pop('type') 
-                    self.ipc_client.send_message(msg_type, data)
+                    # Send to Watchdog with correct method
+                    self.ipc_client.send_message('clipboard', data)
                     logger.debug(f"Clipboard event logged: {len(content)} chars from {source_app}")
          
                 # Reset error counter on success
@@ -341,7 +337,7 @@ class AppUsageMonitor:
         logger.info("App Usage Monitor stopped")
     
     def _monitor_loop(self):
-        """Main monitoring loop"""
+        """Main monitoring loop - FIXED IPC CALL"""
         logger.info("App usage monitor loop started")
         
         while self.running:
@@ -359,16 +355,16 @@ class AppUsageMonitor:
                         duration = (datetime.now() - self.session_start).total_seconds()
                         
                         if duration >= 1.0:  # Only log if duration > 1 second
+                            # FIXED: Create data without 'type' key
                             data = {
-                                'type': 'app_usage',
                                 'timestamp': self.session_start.isoformat(),
                                 'app_name': self.current_app,
                                 'window_title': self.current_window,
                                 'duration_seconds': round(duration, 2)
                             }
                             
-                            msg_type = data.pop('type') 
-                            self.ipc_client.send_message(msg_type, data)
+                            # Send with correct method
+                            self.ipc_client.send_message('app_usage', data)
                             logger.debug(f"App usage logged: {self.current_app} - {duration:.1f}s")
                     
                     # Start new session
@@ -516,6 +512,10 @@ class UserAgent:
                 time.sleep(retry_delay)
         else:
             logger.warning("Could not connect to Service Watchdog, will continue trying in background")
+        
+        # Start auto-reconnect thread
+        reconnect_thread = Thread(target=self.ipc_client.auto_reconnect_loop, daemon=True)
+        reconnect_thread.start()
         
         # Start monitors
         logger.info("Starting monitors...")
